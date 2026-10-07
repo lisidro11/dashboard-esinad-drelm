@@ -41,12 +41,52 @@ function renderDependencias(){let base=filtered(),sc=$('#fScope').value,st=$('#f
 function renderEvolucion(){let d=filtered(),arr=months.map((m,i)=>({m,p:sum(d.filter(x=>x.mes===i+1&&x.estado==='POR RECIBIR')),e:sum(d.filter(x=>x.mes===i+1&&x.estado==='EN PROCESO'))})),mx=Math.max(...arr.map(x=>x.p+x.e),1);$('#evoChart').innerHTML=arr.map(x=>{let t=x.p+x.e,h=Math.max(8,t/mx*230),ep=t?x.e/t*100:0,rp=t?x.p/t*100:0;return `<div class="evocol"><div class="evovalue">${fmt(t)}</div><div class="evostack" style="height:${h}px" title="En proceso: ${fmt(x.e)} · Por recibir: ${fmt(x.p)} · Total: ${fmt(t)}"><i class="evoproc" style="height:${ep}%"></i><i class="evorecv" style="height:${rp}%"></i></div><div class="evometa"><span>● ${fmt(x.e)}</span><span>● ${fmt(x.p)}</span></div><b>${x.m}</b></div>`}).join('');let ym={};d.forEach(x=>ym[x.anio]=(ym[x.anio]||0)+x.cantidad);let yt=sum(d);$('#yearCards').innerHTML=Object.entries(ym).sort((a,b)=>b[0]-a[0]).map(([y,v])=>`<div class="yearcard"><span>${y}</span><strong>${fmt(v)}</strong><small>${yt?(v/yt*100).toFixed(1):0}% del total</small></div>`).join('')||'<p>Sin datos.</p>';$('#peakMonths').innerHTML=[...arr].sort((a,b)=>(b.p+b.e)-(a.p+a.e)).slice(0,6).map((x,i)=>{let t=x.p+x.e;return `<div class="peakrow"><b>${i+1}. ${x.m}</b><div class="peaktrack"><i class="peakfill" style="width:${t/mx*100}%"></i></div><strong>${fmt(t)}</strong><small>En proceso ${fmt(x.e)} · Por recibir ${fmt(x.p)}</small></div>`}).join('')}
 function renderAntiguedad(){let d=filtered();[2023,2024,2025,2026].forEach(y=>$('#age'+y).textContent=fmt(sum(d.filter(x=>x.anio===y))));let rows=agg(d).filter(x=>x.rez>0).sort((a,b)=>b.rez-a.rez),mx=Math.max(...rows.map(x=>x.rez),1);$('#backlogDeps').innerHTML=rows.slice(0,20).map(x=>`<div class="backrow"><b>${x.k}</b><div class="miniTrack"><div class="miniFill" style="width:${x.rez/mx*100}%"></div></div><strong>${fmt(x.rez)}</strong></div>`).join('')||'<p>Sin rezago.</p>';let total=sum(d);$('#ageYears').innerHTML=[2023,2024,2025,2026].map(y=>{let v=sum(d.filter(x=>x.anio===y));return `<div class="agerow"><b>${y}</b><span>${fmt(v)}</span><strong>${total?(v/total*100).toFixed(1):0}%</strong></div>`}).join('')}
 function renderDetalle(){let d=filtered(),q=$('#detailSearch').value.toLowerCase();d=d.filter(x=>[x.ambito,x.oficina,x.unidad,x.area,x.subarea,x.estado].join(' ').toLowerCase().includes(q));$('#detailCount').textContent=`${fmt(d.length)} registros consolidados · ${fmt(sum(d))} documentos`;$('#detailBody').innerHTML=d.slice(0,1500).map(x=>`<tr><td>${scopeOf(x)}</td><td>${x.oficina||'-'}</td><td>${x.unidad||'-'}</td><td>${x.area||'-'}</td><td>${x.subarea||'-'}</td><td>${x.estado}</td><td>${months[x.mes-1]}</td><td>${x.anio}</td><td class="num">${fmt(x.cantidad)}</td></tr>`).join('')}
-
+function renderActualizacion(){let d=filtered();$('#metaFile').textContent=meta.archivo||'-';$('#metaDate').textContent=`${meta.fecha||'-'} ${meta.hora||''}`;$('#metaRows').textContent=fmt(data.length);$('#metaTotal').textContent=fmt(sum(data));}
+function renderActive(){let v=$('.view.active')?.id?.replace('view-','')||'resumen';if(v==='resumen')renderSummary();if(v==='dependencias')renderDependencias();if(v==='evolucion')renderEvolucion();if(v==='detalle')renderDetalle();if(v==='actualizacion')renderActualizacion();$('#lastUpdate').textContent=`${meta.fecha||'-'} ${meta.hora||''}`}
+function renderAll(){renderSummary();renderActive()}
+function cellLooksRed(cell){if(!cell?.s?.font?.color)return false;let c=cell.s.font.color,rgb=String(c.rgb||'').replace(/^FF/i,'').toUpperCase();return ['FF0000','C00000','9C0006','E60000'].includes(rgb)||c.indexed===10}
+function parseWorkbook(wb,name){
+ let ws=wb.Sheets[wb.SheetNames[0]],a=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+ if(a.length<27)throw Error('El archivo no tiene la estructura esperada del Reporte Genérico ESINAD.');
+ let lv=['','','',''],state='',scope='DRELM',out=[];
+ const cols=[0,2,4,8];
+ // En ESINAD la columna OFICINA usa celdas combinadas. SheetJS solo devuelve
+ // el valor en la primera fila del rango; por eso propagamos exclusivamente
+ // OFICINA hacia abajo hasta que aparezca una nueva OFICINA.
+ for(let r=26;r<a.length;r++){
+   let row=a[r];
+   let oficina=clean(row[0]);
+   if(oficina&&oficina!=='TOTAL'&&!oficina.startsWith('DETALLE DE DEPENDENCIAS')&&!oficina.startsWith('OFICINA UNIDAD')){
+     lv[0]=oficina;
+     lv[1]='';lv[2]='';lv[3]='';
+     scope=oficina==='DIRECCIÓN'?'UGEL':'DRELM';
+   }
+   // UNIDAD, ÁREA y SUB-ÁREA mantienen su propia jerarquía; NO intervienen en ÁMBITO.
+   for(let i=1;i<4;i++){
+     let t=clean(row[cols[i]]);
+     if(t&&t!=='TOTAL'){
+       lv[i]=t;
+       for(let j=i+1;j<4;j++)lv[j]='';
+     }
+   }
+   let st=clean(row[11]);
+   if(['POR RECIBIR','EN PROCESO'].includes(st))state=st;
+   let m=+row[13];
+   if(m>=1&&m<=12&&state){
+     [[14,2023],[15,2024],[16,2025],[18,2026]].forEach(([c,y])=>{
+       let q=+row[c];
+       if(Number.isFinite(q)&&q>0)out.push({ambito:scope,oficina:lv[0],unidad:lv[1],area:lv[2],subarea:lv[3],estado:state,mes:m,anio:y,cantidad:q})
+     })
+   }
+ }
+ if(!out.length)throw Error('No se encontraron registros válidos.');
+ return {out,meta:{fecha:clean(a[3]?.[17])||new Date().toLocaleDateString('es-PE'),hora:clean(a[5]?.[17])||new Date().toLocaleTimeString('es-PE'),archivo:name,registros:out.length}}
+}
 async function loadFile(file){try{$('#uploadInfo').innerHTML='Procesando…';let wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellStyles:true}),res=parseWorkbook(wb,file.name);data=res.out;meta=res.meta;localStorage.setItem(STORAGE_DATA_KEY,JSON.stringify(data));localStorage.setItem(STORAGE_META_KEY,JSON.stringify(meta));orgSelected=null;expanded.clear();initFilters();renderAll();$('#uploadInfo').innerHTML=`<p class="ok">✓ Base actualizada: ${fmt(sum(data))} documentos.</p>`}catch(e){$('#uploadInfo').innerHTML=`<p class="err">${e.message}</p>`}}
 // navegación
 $$('.navbtn').forEach(b=>b.onclick=()=>{$$('.navbtn').forEach(x=>x.classList.remove('active'));b.classList.add('active');$$('.view').forEach(v=>v.classList.remove('active'));$('#view-'+b.dataset.view).classList.add('active');renderActive()});
 ['#fScope','#fState','#fYear','#fMonth'].forEach(s=>$(s).onchange=()=>{orgSelected=null;renderAll()});$('#clearBtn').onclick=()=>{['#fScope','#fState','#fYear','#fMonth'].forEach(s=>$(s).value='');orgSelected=null;expanded.clear();renderAll()};$('#search').oninput=renderSummary;$('#detailSearch').oninput=renderDetalle;$('#orgHome').onclick=()=>{orgSelected=null;expanded.clear();renderDependencias()};
 $('#exportBtn').onclick=()=>{let d=filtered();let rows=d.map(x=>({'Ámbito':scopeOf(x),'Oficina':x.oficina||'','Unidad':x.unidad||'','Área':x.area||'','Subárea':x.subarea||'','Estado':x.estado||'','Mes':months[(+x.mes||1)-1]||x.mes,'Año':x.anio,'Cantidad':x.cantidad}));let wb=XLSX.utils.book_new(),ws=XLSX.utils.json_to_sheet(rows);ws['!cols']=[{wch:12},{wch:42},{wch:42},{wch:48},{wch:48},{wch:16},{wch:10},{wch:10},{wch:14}];XLSX.utils.book_append_sheet(wb,ws,'Detalle');let total=sum(d),resume=[['REPORTE DE SEGUIMIENTO DE EXPEDIENTES - ESINAD'],['Filtros aplicados'],['Ámbito',$('#fScope').value||'Todos'],['Estado',$('#fState').value||'Todos'],['Año',$('#fYear').value||'Todos'],['Mes',$('#fMonth').value?months[+$('#fMonth').value-1]:'Todos'],[],['Indicador','Cantidad'],['Total',total],['En proceso',sum(d.filter(x=>x.estado==='EN PROCESO'))],['Por recibir',sum(d.filter(x=>x.estado==='POR RECIBIR'))],['DRELM',sum(d.filter(x=>scopeOf(x)==='DRELM'))],['UGEL',sum(d.filter(x=>scopeOf(x)==='UGEL'))]];let wr=XLSX.utils.aoa_to_sheet(resume);wr['!cols']=[{wch:34},{wch:22}];XLSX.utils.book_append_sheet(wb,wr,'Resumen');XLSX.writeFile(wb,'seguimiento_expedientes_esinad.xlsx')};
 $('#depExportBtn').onclick=()=>{let d=depData();let sc=orgSelected?.scope||$('#fScope').value||'';let path=orgSelected?.path||[];if(sc)d=d.filter(x=>scopeOf(x)===sc);path.forEach(p=>d=d.filter(x=>clean(x[p.key])===p.value));let keys=sc?availableKeys(sc,d,path):[];let key=keys[0]||firstMeaningfulKey(sc||'DRELM',d);let rows=agg(d,key).filter(x=>meaningful(x.k)).map(x=>({'Ámbito':sc||'Todos','Nivel':levelLabel(key,sc||'DRELM'),'Dependencia':x.k,'En proceso':x.e,'Por recibir':x.p,'Total':x.t,'Participación %':sum(d)?+(x.t/sum(d)*100).toFixed(1):0,'Rezago 2023-2025':x.rez}));let wb=XLSX.utils.book_new(),ws=XLSX.utils.json_to_sheet(rows);ws['!cols']=[{wch:12},{wch:26},{wch:58},{wch:14},{wch:14},{wch:14},{wch:16},{wch:20}];XLSX.utils.book_append_sheet(wb,ws,'Dependencias');let filtros=[['REPORTE POR DEPENDENCIAS - ESINAD'],['Ámbito',sc||'Todos'],['Estado',$('#fState').value||'Todos'],['Año',$('#fYear').value||'Todos'],['Mes',$('#fMonth').value?months[+$('#fMonth').value-1]:'Todos'],['Selección jerárquica',path.map(x=>x.value).join(' > ')||'Nivel inicial'],[],['Total',sum(d)]];let wf=XLSX.utils.aoa_to_sheet(filtros);wf['!cols']=[{wch:26},{wch:60}];XLSX.utils.book_append_sheet(wb,wf,'Filtros');XLSX.writeFile(wb,'dependencias_esinad.xlsx')};
-if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0])};
+$('#uploadBtn').onclick=()=>$('#modal').classList.add('show');$('#uploadBtn2').onclick=()=>$('#modal').classList.add('show');$('#closeModal').onclick=()=>$('#modal').classList.remove('show');$('#drop').onclick=()=>$('#fileInput').click();$('#fileInput').onchange=e=>e.target.files[0]&&loadFile(e.target.files[0]);$('#drop').ondragover=e=>e.preventDefault();$('#drop').ondrop=e=>{e.preventDefault();if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0])};
 initFilters();renderAll();

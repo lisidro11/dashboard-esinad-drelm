@@ -102,28 +102,51 @@ $('#exportBtn').onclick=()=>{let d=filtered();let rows=d.map(x=>({'Ámbito':scop
 $('#depExportBtn').onclick=()=>{let d=depData();let sc=orgSelected?.scope||$('#fScope').value||'';let path=orgSelected?.path||[];if(sc)d=d.filter(x=>scopeOf(x)===sc);path.forEach(p=>d=d.filter(x=>clean(x[p.key])===p.value));let keys=sc?availableKeys(sc,d,path):[];let key=keys[0]||firstMeaningfulKey(sc||'DRELM',d);let rows=agg(d,key).filter(x=>meaningful(x.k)).map(x=>({'Ámbito':sc||'Todos','Nivel':levelLabel(key,sc||'DRELM'),'Dependencia':x.k,'En proceso':x.e,'Por recibir':x.p,'Total':x.t,'Participación %':sum(d)?+(x.t/sum(d)*100).toFixed(1):0,'Rezago 2023-2025':x.rez}));let wb=XLSX.utils.book_new(),ws=XLSX.utils.json_to_sheet(rows);ws['!cols']=[{wch:12},{wch:26},{wch:58},{wch:14},{wch:14},{wch:14},{wch:16},{wch:20}];XLSX.utils.book_append_sheet(wb,ws,'Dependencias');let filtros=[['REPORTE POR DEPENDENCIAS - ESINAD'],['Ámbito',sc||'Todos'],['Estado',$('#fState').value||'Todos'],['Año',$('#fYear').value||'Todos'],['Mes',$('#fMonth').value?months[+$('#fMonth').value-1]:'Todos'],['Selección jerárquica',path.map(x=>x.value).join(' > ')||'Nivel inicial'],[],['Total',sum(d)]];let wf=XLSX.utils.aoa_to_sheet(filtros);wf['!cols']=[{wch:26},{wch:60}];XLSX.utils.book_append_sheet(wb,wf,'Filtros');XLSX.writeFile(wb,'dependencias_esinad.xlsx')};
 // Carga de Excel deshabilitada en el dashboard público; se administra desde Python privado.
 
-function openCurrentReport(){
- const d=filtered(), total=sum(d), pr=sum(d.filter(x=>x.estado==='POR RECIBIR')), ep=sum(d.filter(x=>x.estado==='EN PROCESO'));
- const sc=$('#fScope').value||'Todos', st=$('#fState').value||'Todos', y=$('#fYear').value||'Todos', m=$('#fMonth').value?months[+$('#fMonth').value-1]:'Todos';
- const byScope=['DRELM','UGEL'].map(s=>[s,sum(d.filter(x=>scopeOf(x)===s))]);
- const byYear=[...new Set(d.map(x=>x.anio))].sort().map(a=>[a,sum(d.filter(x=>x.anio===a))]);
- const rows=aggDynamic(d).slice(0,30);
- const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
- const body=`<!doctype html><html><head><meta charset="utf-8"><title>Informe ESINAD</title><style>
- body{font-family:Arial,sans-serif;color:#17324d;margin:32px}h1{color:#064b87;margin-bottom:4px}h2{font-size:17px;margin-top:25px;color:#064b87}
- .sub{color:#58738e}.meta,.cards{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}.box{border:1px solid #cdddeb;border-radius:9px;padding:12px 16px;min-width:150px}.box b{display:block;font-size:23px;color:#092f55}
- table{border-collapse:collapse;width:100%;margin-top:10px;font-size:12px}th,td{border-bottom:1px solid #dbe5ee;padding:7px;text-align:left}th{background:#eef5fb}.num{text-align:right}
- .foot{margin-top:24px;font-size:11px;color:#657b90}@media print{button{display:none}body{margin:12mm}}button{padding:9px 15px;border:0;border-radius:7px;background:#0877c9;color:white;font-weight:bold;cursor:pointer}
- </style></head><body><h1>Seguimiento de Expedientes</h1><div class="sub">Documentación pendiente de trámite · ESINAD</div>
- <div class="meta"><div class="box">Fecha de corte<b>${esc(meta.fecha||'-')} ${esc(meta.hora||'')}</b></div><div class="box">Ámbito<b>${esc(sc)}</b></div><div class="box">Estado<b>${esc(st)}</b></div><div class="box">Año / Mes<b>${esc(y)} / ${esc(m)}</b></div></div>
- <div class="cards"><div class="box">Total pendientes<b>${fmt(total)}</b></div><div class="box">Por recibir<b>${fmt(pr)}</b></div><div class="box">En proceso<b>${fmt(ep)}</b></div></div>
- <h2>Distribución por ámbito</h2><table><tr><th>Ámbito</th><th class="num">Cantidad</th><th class="num">Participación</th></tr>${byScope.map(([k,v])=>`<tr><td>${k}</td><td class="num">${fmt(v)}</td><td class="num">${total?(v/total*100).toFixed(1):0}%</td></tr>`).join('')}</table>
- <h2>Distribución por año</h2><table><tr><th>Año</th><th class="num">Cantidad</th><th class="num">Participación</th></tr>${byYear.map(([k,v])=>`<tr><td>${k}</td><td class="num">${fmt(v)}</td><td class="num">${total?(v/total*100).toFixed(1):0}%</td></tr>`).join('')}</table>
- <h2>Seguimiento por dependencia</h2><table><tr><th>Dependencia</th><th class="num">Por recibir</th><th class="num">En proceso</th><th class="num">Total</th></tr>${rows.map(x=>`<tr><td>${esc(x.k)}</td><td class="num">${fmt(x.p)}</td><td class="num">${fmt(x.e)}</td><td class="num"><b>${fmt(x.t)}</b></td></tr>`).join('')}</table>
- <div class="foot">Fuente: Reporte ESINAD · Elaborado por Equipo de Estadística y Monitoreo – OPP-DRELM</div><p><button onclick="window.print()">Imprimir / Guardar PDF</button></p></body></html>`;
- const w=window.open('','_blank'); if(!w){alert('Permita ventanas emergentes para generar el informe.');return} w.document.open();w.document.write(body);w.document.close();
+function downloadCurrentReportPDF(){
+ if(!window.jspdf || !window.jspdf.jsPDF){alert('No se pudo cargar el generador de PDF. Verifique su conexión a Internet y vuelva a intentarlo.');return;}
+ const {jsPDF}=window.jspdf, doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+ const d=filtered(),total=sum(d),pr=sum(d.filter(x=>x.estado==='POR RECIBIR')),ep=sum(d.filter(x=>x.estado==='EN PROCESO'));
+ const dr=sum(d.filter(x=>scopeOf(x)==='DRELM')),ug=sum(d.filter(x=>scopeOf(x)==='UGEL'));
+ const rez=sum(d.filter(x=>+x.anio<2026)),current=sum(d.filter(x=>+x.anio===2026));
+ const cut=String(meta.fecha||'sin_fecha');
+ const filters=`Ambito: ${$('#fScope').value||'Todos'} | Estado: ${$('#fState').value||'Todos'} | Ano: ${$('#fYear').value||'Todos'} | Mes: ${$('#fMonth').value?months[+$('#fMonth').value-1]:'Todos'}`;
+ const blue=[11,62,110],gray=[75,94,111];let y=0;
+ const txt=(s,x,yy,size=9,bold=false,color=gray)=>{doc.setFont('helvetica',bold?'bold':'normal');doc.setFontSize(size);doc.setTextColor(...color);doc.text(String(s),x,yy)};
+ const line=(yy)=>{doc.setDrawColor(208,222,232);doc.line(16,yy,194,yy)};
+ const paragraph=(s)=>{doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(...gray);const lines=doc.splitTextToSize(String(s),178);doc.text(lines,16,y);y+=lines.length*4.8+3};
+ const section=(n,s)=>{y+=3;txt(`${n}. ${s}`,16,y,10,true,blue);y+=7};
+ const footer=(page)=>{line(278);txt(`Fuente: Reporte Generico ESINAD | Corte: ${cut}`,16,283,7);txt(`EEM - OPP - DRELM | Pagina ${page} de 2`,194,283,7,false,gray);};
+ const header=(subtitle)=>{doc.setFillColor(...blue);doc.rect(0,0,210,22,'F');txt('DRELM - OFICINA DE PLANIFICACION Y PRESUPUESTO',16,12,10,true,[255,255,255]);y=31;txt('INFORME DE RESULTADOS',16,y,17,true,blue);y+=8;txt(subtitle,16,y,9,false);y+=6;txt(`Fecha de corte: ${cut} | ${filters}`,16,y,7,false);y+=7;line(y);y+=7};
+ const pct=v=>total?`${(100*v/total).toFixed(1)}%`:'0.0%';
+ header('Seguimiento de documentacion pendiente de tramite - ESINAD');
+ const metrics=[['Total pendiente',total,'100.0%'],['En proceso',ep,pct(ep)],['Por recibir',pr,pct(pr)],['DRELM',dr,pct(dr)],['UGEL',ug,pct(ug)],['Rezago 2023-2025',rez,pct(rez)],['Ano 2026',current,pct(current)]];
+ doc.setFillColor(234,242,249);doc.rect(16,y-4,178,7,'F');txt('INDICADOR',19,y,8,true,blue);txt('CANTIDAD',133,y,8,true,blue);txt('PARTICIPACION',164,y,8,true,blue);y+=7;
+ metrics.forEach((r,i)=>{if(i%2===0){doc.setFillColor(247,250,252);doc.rect(16,y-4.5,178,6.5,'F')}txt(r[0],19,y,8);txt(fmt(r[1]),136,y,8,true);txt(r[2],168,y,8);y+=6.5});
+ section(1,'RESULTADO GENERAL');paragraph(`Al corte del ${cut}, se registran ${fmt(total)} documentos pendientes de tramite. De ellos, ${fmt(ep)} se encuentran en proceso (${pct(ep)}) y ${fmt(pr)} por recibir (${pct(pr)}).`);
+ section(2,'DISTRIBUCION POR AMBITO');paragraph(`La DRELM registra ${fmt(dr)} documentos (${pct(dr)}) y las UGEL ${fmt(ug)} (${pct(ug)}). La clasificacion utiliza el campo OFICINA: DIRECCION corresponde a UGEL; los demas valores corresponden a DRELM.`);
+ section(3,'REZAGO POR ANO');paragraph(`Los documentos de 2023 a 2025 suman ${fmt(rez)} (${pct(rez)}); los correspondientes a 2026 suman ${fmt(current)} (${pct(current)}). Los resultados consideran los filtros aplicados.`);
+ section(4,'COMPORTAMIENTO MENSUAL');
+ const monthly=months.map((m,i)=>({m,v:sum(d.filter(x=>+x.mes===i+1))}));
+ const peaks=monthly.filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,3);
+ paragraph(peaks.length?`Los meses con mayor carga registrada son ${peaks.map(x=>`${x.m}: ${fmt(x.v)}`).join('; ')}. La distribucion refleja el mes consignado en el reporte.`:'No hay registros mensuales para los filtros seleccionados.');
+ section(5,'DRELM: DEPENDENCIAS CON MAYOR CARGA');
+ const byOffice={};d.filter(x=>scopeOf(x)==='DRELM').forEach(x=>{const k=x.oficina||'Sin oficina';byOffice[k]=(byOffice[k]||0)+x.cantidad});
+ const top=Object.entries(byOffice).sort((a,b)=>b[1]-a[1]).slice(0,4);
+ paragraph(top.length?top.map(([k,v],i)=>`${i+1}) ${k}: ${fmt(v)}`).join(' | '):'No se registran dependencias DRELM con los filtros seleccionados.');
+ section(6,'PRINCIPALES HALLAZGOS');paragraph(`La mayor proporcion corresponde a ${ep>=pr?'documentos en proceso':'documentos por recibir'}. El ambito con mayor carga es ${ug>=dr?'UGEL':'DRELM'}. Estas cifras son descriptivas y no implican una evaluacion de desempeno.`);
+ footer(1);
+ doc.addPage();header('Analisis y consideraciones del reporte actualizado');
+ section(7,'CONSIDERACIONES');
+ paragraph('El informe se genera automaticamente con la informacion publicada en el tablero y los filtros activos al momento de la descarga. Las cifras son agregadas y corresponden al Reporte Generico ESINAD.');
+ paragraph('La clasificacion de ambito se realiza exclusivamente mediante el campo OFICINA: DIRECCION = UGEL; cualquier otro valor = DRELM. No se utiliza color de fuente, unidad, area ni subarea para asignar ambito.');
+ paragraph('Las variaciones entre cortes pueden obedecer a nuevas entradas, cambios de estado y actualizaciones del registro. La informacion debe interpretarse segun su fecha de corte.');
+ section(8,'CONCLUSIONES');
+ paragraph(`Al ${cut}, el reporte registra ${fmt(total)} documentos pendientes: ${fmt(ep)} en proceso y ${fmt(pr)} por recibir. El ambito DRELM concentra ${fmt(dr)} y el ambito UGEL ${fmt(ug)}.`);
+ paragraph(`La carga correspondiente a 2023-2025 es de ${fmt(rez)} documentos. Se recomienda priorizar el seguimiento de los registros de mayor antiguedad y revisar periodicamente la informacion de origen.`);
+ y+=25;line(y);y+=9;txt('Equipo de Estadistica y Monitoreo',105,y,10,true,blue);y+=6;txt('Oficina de Planificacion y Presupuesto - DRELM',105,y,9);footer(2);
+ doc.save(`Informe_Resultados_ESINAD_${cut.replace(/[^0-9]/g,'-')}.pdf`);
 }
-$('#reportBtn').onclick=openCurrentReport;
+$('#reportBtn').onclick=downloadCurrentReportPDF;
 document.addEventListener('click',()=>$$('.filterdrop').forEach(x=>x.classList.remove('open')));
 
 initFilters();renderAll();

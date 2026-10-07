@@ -74,3 +74,10 @@
 @media(max-width:430px){.yearcards{grid-template-columns:1fr}.evometa{display:none}}
 
 .reportlink{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.dep-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+.filterdrop{position:relative;min-width:145px}
+.filterdrop-btn{width:100%;height:42px;border:1px solid #c8d9e9;border-radius:9px;background:#fff;padding:0 13px;display:flex;align-items:center;justify-content:space-between;font:inherit;cursor:pointer;color:#111}
+.filterdrop-menu{display:none;position:absolute;top:46px;left:0;min-width:100%;background:#fff;border:1px solid #c8d9e9;border-radius:9px;box-shadow:0 10px 28px #24496a2b;z-index:1000;padding:6px;max-height:280px;overflow:auto}
+.filterdrop.open .filterdrop-menu{display:block}
+.filterdrop-menu button{display:block;width:100%;border:0;background:#fff;text-align:left;padding:9px 11px;border-radius:6px;cursor:pointer;font:inherit;white-space:nowrap}
+.filterdrop-menu button:hover,.filterdrop-menu button.active{background:#eaf4fd;color:#075da8;font-weight:700}

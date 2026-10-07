@@ -11,9 +11,21 @@ function firstMeaningfulKey(scope,d){for(const k of ['oficina','unidad','area','
 function summaryKey(d){const sc=$('#fScope').value;if(sc)return firstMeaningfulKey(sc,d);return 'ambito'}
 function aggDynamic(d){const sc=$('#fScope').value;if(!sc){const M={};d.forEach(x=>{let k=scopeOf(x);M[k]??={p:0,e:0,ys:{}};if(x.estado==='POR RECIBIR')M[k].p+=x.cantidad;else M[k].e+=x.cantidad;M[k].ys[x.anio]=(M[k].ys[x.anio]||0)+x.cantidad});return Object.entries(M).map(([k,v])=>({k,...v,t:v.p+v.e,rez:(v.ys[2023]||0)+(v.ys[2024]||0)+(v.ys[2025]||0)})).sort((a,b)=>b.t-a.t)}return agg(d,firstMeaningfulKey(sc,d)).filter(x=>meaningful(x.k))}
 function initFilters(){
-  const ys=[...new Set(data.map(x=>x.anio))].sort();
-  $('#fYear').innerHTML='<option value="">Todos los años</option>'+ys.map(y=>`<option>${y}</option>`).join('');
-  $('#fMonth').innerHTML='<option value="">Todos los meses</option>'+months.map((m,i)=>`<option value="${i+1}">${m}</option>`).join('');
+  const ys=[...new Set(data.map(x=>x.anio))].sort((a,b)=>a-b);
+  $('#yearMenu').innerHTML='<button type="button" data-value="">Todos los años</button>'+ys.map(y=>`<button type="button" data-value="${y}">${y}</button>`).join('');
+  $('#monthMenu').innerHTML='<button type="button" data-value="">Todos los meses</button>'+months.map((m,i)=>`<button type="button" data-value="${i+1}">${m}</button>`).join('');
+  bindFilterDrop('#yearDrop','#yearBtn','#yearMenu','#fYear','Todos los años',v=>v);
+  bindFilterDrop('#monthDrop','#monthBtn','#monthMenu','#fMonth','Todos los meses',v=>months[+v-1]||'Todos los meses');
+}
+function bindFilterDrop(dropSel,btnSel,menuSel,inputSel,allLabel,labelFn){
+  const drop=$(dropSel),btn=$(btnSel),menu=$(menuSel),input=$(inputSel);
+  menu.querySelectorAll('button').forEach(opt=>opt.onclick=(e)=>{
+    e.stopPropagation(); input.value=opt.dataset.value;
+    btn.innerHTML=`${opt.dataset.value?labelFn(opt.dataset.value):allLabel} <span>⌄</span>`;
+    menu.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===opt));
+    drop.classList.remove('open'); orgSelected=null; renderAll();
+  });
+  btn.onclick=(e)=>{e.stopPropagation(); $$('.filterdrop').forEach(x=>x!==drop&&x.classList.remove('open')); drop.classList.toggle('open')};
 }
 function filtered(){const sc=$('#fScope').value,st=$('#fState').value,y=$('#fYear').value,m=$('#fMonth').value;return data.filter(x=>(!sc||scopeOf(x)===sc)&&(!st||x.estado===st)&&(!y||x.anio===+y)&&(!m||x.mes===+m))}
 function agg(d,key='oficina'){const M={};d.forEach(x=>{let k=clean(x[key])||'Sin dependencia';M[k]??={p:0,e:0,ys:{}};if(x.estado==='POR RECIBIR')M[k].p+=x.cantidad;else M[k].e+=x.cantidad;M[k].ys[x.anio]=(M[k].ys[x.anio]||0)+x.cantidad});return Object.entries(M).map(([k,v])=>({k,...v,t:v.p+v.e,rez:(v.ys[2023]||0)+(v.ys[2024]||0)+(v.ys[2025]||0)})).sort((a,b)=>b.t-a.t)}
@@ -85,8 +97,33 @@ function parseWorkbook(wb,name){
 async function loadFile(file){try{$('#uploadInfo').innerHTML='Procesando…';let wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellStyles:true}),res=parseWorkbook(wb,file.name);data=res.out;meta=res.meta;localStorage.setItem(STORAGE_DATA_KEY,JSON.stringify(data));localStorage.setItem(STORAGE_META_KEY,JSON.stringify(meta));orgSelected=null;expanded.clear();initFilters();renderAll();$('#uploadInfo').innerHTML=`<p class="ok">✓ Base actualizada: ${fmt(sum(data))} documentos.</p>`}catch(e){$('#uploadInfo').innerHTML=`<p class="err">${e.message}</p>`}}
 // navegación
 $$('.navbtn').forEach(b=>b.onclick=()=>{$$('.navbtn').forEach(x=>x.classList.remove('active'));b.classList.add('active');$$('.view').forEach(v=>v.classList.remove('active'));$('#view-'+b.dataset.view).classList.add('active');renderActive()});
-['#fScope','#fState','#fYear','#fMonth'].forEach(s=>$(s).onchange=()=>{orgSelected=null;renderAll()});$('#clearBtn').onclick=()=>{['#fScope','#fState','#fYear','#fMonth'].forEach(s=>$(s).value='');orgSelected=null;expanded.clear();renderAll()};$('#search').oninput=renderSummary;$('#detailSearch').oninput=renderDetalle;$('#orgHome').onclick=()=>{orgSelected=null;expanded.clear();renderDependencias()};
+['#fScope','#fState'].forEach(s=>$(s).onchange=()=>{orgSelected=null;renderAll()});$('#clearBtn').onclick=()=>{['#fScope','#fState','#fYear','#fMonth'].forEach(s=>$(s).value='');$('#yearBtn').innerHTML='Todos los años <span>⌄</span>';$('#monthBtn').innerHTML='Todos los meses <span>⌄</span>';orgSelected=null;expanded.clear();renderAll()};$('#search').oninput=renderSummary;$('#detailSearch').oninput=renderDetalle;$('#orgHome').onclick=()=>{orgSelected=null;expanded.clear();renderDependencias()};
 $('#exportBtn').onclick=()=>{let d=filtered();let rows=d.map(x=>({'Ámbito':scopeOf(x),'Oficina':x.oficina||'','Unidad':x.unidad||'','Área':x.area||'','Subárea':x.subarea||'','Estado':x.estado||'','Mes':months[(+x.mes||1)-1]||x.mes,'Año':x.anio,'Cantidad':x.cantidad}));let wb=XLSX.utils.book_new(),ws=XLSX.utils.json_to_sheet(rows);ws['!cols']=[{wch:12},{wch:42},{wch:42},{wch:48},{wch:48},{wch:16},{wch:10},{wch:10},{wch:14}];XLSX.utils.book_append_sheet(wb,ws,'Detalle');let total=sum(d),resume=[['REPORTE DE SEGUIMIENTO DE EXPEDIENTES - ESINAD'],['Filtros aplicados'],['Ámbito',$('#fScope').value||'Todos'],['Estado',$('#fState').value||'Todos'],['Año',$('#fYear').value||'Todos'],['Mes',$('#fMonth').value?months[+$('#fMonth').value-1]:'Todos'],[],['Indicador','Cantidad'],['Total',total],['En proceso',sum(d.filter(x=>x.estado==='EN PROCESO'))],['Por recibir',sum(d.filter(x=>x.estado==='POR RECIBIR'))],['DRELM',sum(d.filter(x=>scopeOf(x)==='DRELM'))],['UGEL',sum(d.filter(x=>scopeOf(x)==='UGEL'))]];let wr=XLSX.utils.aoa_to_sheet(resume);wr['!cols']=[{wch:34},{wch:22}];XLSX.utils.book_append_sheet(wb,wr,'Resumen');XLSX.writeFile(wb,'seguimiento_expedientes_esinad.xlsx')};
 $('#depExportBtn').onclick=()=>{let d=depData();let sc=orgSelected?.scope||$('#fScope').value||'';let path=orgSelected?.path||[];if(sc)d=d.filter(x=>scopeOf(x)===sc);path.forEach(p=>d=d.filter(x=>clean(x[p.key])===p.value));let keys=sc?availableKeys(sc,d,path):[];let key=keys[0]||firstMeaningfulKey(sc||'DRELM',d);let rows=agg(d,key).filter(x=>meaningful(x.k)).map(x=>({'Ámbito':sc||'Todos','Nivel':levelLabel(key,sc||'DRELM'),'Dependencia':x.k,'En proceso':x.e,'Por recibir':x.p,'Total':x.t,'Participación %':sum(d)?+(x.t/sum(d)*100).toFixed(1):0,'Rezago 2023-2025':x.rez}));let wb=XLSX.utils.book_new(),ws=XLSX.utils.json_to_sheet(rows);ws['!cols']=[{wch:12},{wch:26},{wch:58},{wch:14},{wch:14},{wch:14},{wch:16},{wch:20}];XLSX.utils.book_append_sheet(wb,ws,'Dependencias');let filtros=[['REPORTE POR DEPENDENCIAS - ESINAD'],['Ámbito',sc||'Todos'],['Estado',$('#fState').value||'Todos'],['Año',$('#fYear').value||'Todos'],['Mes',$('#fMonth').value?months[+$('#fMonth').value-1]:'Todos'],['Selección jerárquica',path.map(x=>x.value).join(' > ')||'Nivel inicial'],[],['Total',sum(d)]];let wf=XLSX.utils.aoa_to_sheet(filtros);wf['!cols']=[{wch:26},{wch:60}];XLSX.utils.book_append_sheet(wb,wf,'Filtros');XLSX.writeFile(wb,'dependencias_esinad.xlsx')};
 // Carga de Excel deshabilitada en el dashboard público; se administra desde Python privado.
+
+function openCurrentReport(){
+ const d=filtered(), total=sum(d), pr=sum(d.filter(x=>x.estado==='POR RECIBIR')), ep=sum(d.filter(x=>x.estado==='EN PROCESO'));
+ const sc=$('#fScope').value||'Todos', st=$('#fState').value||'Todos', y=$('#fYear').value||'Todos', m=$('#fMonth').value?months[+$('#fMonth').value-1]:'Todos';
+ const byScope=['DRELM','UGEL'].map(s=>[s,sum(d.filter(x=>scopeOf(x)===s))]);
+ const byYear=[...new Set(d.map(x=>x.anio))].sort().map(a=>[a,sum(d.filter(x=>x.anio===a))]);
+ const rows=aggDynamic(d).slice(0,30);
+ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+ const body=`<!doctype html><html><head><meta charset="utf-8"><title>Informe ESINAD</title><style>
+ body{font-family:Arial,sans-serif;color:#17324d;margin:32px}h1{color:#064b87;margin-bottom:4px}h2{font-size:17px;margin-top:25px;color:#064b87}
+ .sub{color:#58738e}.meta,.cards{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}.box{border:1px solid #cdddeb;border-radius:9px;padding:12px 16px;min-width:150px}.box b{display:block;font-size:23px;color:#092f55}
+ table{border-collapse:collapse;width:100%;margin-top:10px;font-size:12px}th,td{border-bottom:1px solid #dbe5ee;padding:7px;text-align:left}th{background:#eef5fb}.num{text-align:right}
+ .foot{margin-top:24px;font-size:11px;color:#657b90}@media print{button{display:none}body{margin:12mm}}button{padding:9px 15px;border:0;border-radius:7px;background:#0877c9;color:white;font-weight:bold;cursor:pointer}
+ </style></head><body><h1>Seguimiento de Expedientes</h1><div class="sub">Documentación pendiente de trámite · ESINAD</div>
+ <div class="meta"><div class="box">Fecha de corte<b>${esc(meta.fecha||'-')} ${esc(meta.hora||'')}</b></div><div class="box">Ámbito<b>${esc(sc)}</b></div><div class="box">Estado<b>${esc(st)}</b></div><div class="box">Año / Mes<b>${esc(y)} / ${esc(m)}</b></div></div>
+ <div class="cards"><div class="box">Total pendientes<b>${fmt(total)}</b></div><div class="box">Por recibir<b>${fmt(pr)}</b></div><div class="box">En proceso<b>${fmt(ep)}</b></div></div>
+ <h2>Distribución por ámbito</h2><table><tr><th>Ámbito</th><th class="num">Cantidad</th><th class="num">Participación</th></tr>${byScope.map(([k,v])=>`<tr><td>${k}</td><td class="num">${fmt(v)}</td><td class="num">${total?(v/total*100).toFixed(1):0}%</td></tr>`).join('')}</table>
+ <h2>Distribución por año</h2><table><tr><th>Año</th><th class="num">Cantidad</th><th class="num">Participación</th></tr>${byYear.map(([k,v])=>`<tr><td>${k}</td><td class="num">${fmt(v)}</td><td class="num">${total?(v/total*100).toFixed(1):0}%</td></tr>`).join('')}</table>
+ <h2>Seguimiento por dependencia</h2><table><tr><th>Dependencia</th><th class="num">Por recibir</th><th class="num">En proceso</th><th class="num">Total</th></tr>${rows.map(x=>`<tr><td>${esc(x.k)}</td><td class="num">${fmt(x.p)}</td><td class="num">${fmt(x.e)}</td><td class="num"><b>${fmt(x.t)}</b></td></tr>`).join('')}</table>
+ <div class="foot">Fuente: Reporte ESINAD · Elaborado por Equipo de Estadística y Monitoreo – OPP-DRELM</div><p><button onclick="window.print()">Imprimir / Guardar PDF</button></p></body></html>`;
+ const w=window.open('','_blank'); if(!w){alert('Permita ventanas emergentes para generar el informe.');return} w.document.open();w.document.write(body);w.document.close();
+}
+$('#reportBtn').onclick=openCurrentReport;
+document.addEventListener('click',()=>$$('.filterdrop').forEach(x=>x.classList.remove('open')));
+
 initFilters();renderAll();
